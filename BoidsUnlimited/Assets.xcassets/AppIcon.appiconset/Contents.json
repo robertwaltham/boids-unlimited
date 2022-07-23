@@ -26,6 +26,7 @@
       "size" : "40x40"
     },
     {
+      "filename" : "boids_app120x120.png",
       "idiom" : "iphone",
       "scale" : "3x",
       "size" : "40x40"
@@ -36,6 +37,7 @@
       "size" : "60x60"
     },
     {
+      "filename" : "boids_app180x180.png",
       "idiom" : "iphone",
       "scale" : "3x",
       "size" : "60x60"
@@ -76,18 +78,19 @@
       "size" : "76x76"
     },
     {
+      "filename" : "boids_app152x152.png",
       "idiom" : "ipad",
       "scale" : "2x",
       "size" : "76x76"
     },
     {
-      "filename" : "BOID 2.png",
+      "filename" : "boids_app167x167.png",
       "idiom" : "ipad",
       "scale" : "2x",
       "size" : "83.5x83.5"
     },
     {
-      "filename" : "BOID.png",
+      "filename" : "boids_app1024x1024.png",
       "idiom" : "ios-marketing",
       "scale" : "1x",
       "size" : "1024x1024"
