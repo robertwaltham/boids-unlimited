@@ -40,8 +40,9 @@ final class BoidsRenderer: MetalView.Coordinator {
     var secondState: MTLComputePipelineState!
     var thirdState: MTLComputePipelineState!
 
-    var particleBuffer: MTLBuffer!
-
+    var particleBuffer: [MTLBuffer]!
+    var currentFrameIndex = 0
+    
     var particleCount = 0
     var maxSpeed: Float = 0
     var margin: Float = 50
@@ -53,6 +54,9 @@ final class BoidsRenderer: MetalView.Coordinator {
 
     var particles = [Particle]()
     var obstacles = [Obstacle]()
+    
+    static let maxInflightBuffers: Int = 3;
+    var frameBoundarySemaphore: DispatchSemaphore = DispatchSemaphore(value: maxInflightBuffers)
 
     init(_ parent: MetalView) {
         
@@ -84,6 +88,8 @@ final class BoidsRenderer: MetalView.Coordinator {
             return
         }
         
+        particleBuffer = [MTLBuffer]()
+        
         for _ in 0 ..< particleCount {
             let speed = SIMD2<Float>(Float.random(min: -maxSpeed, max: maxSpeed), Float.random(min: -maxSpeed, max: maxSpeed))
             let position = SIMD2<Float>(randomPosition(length: UInt(viewPortSize.x)), randomPosition(length: UInt(viewPortSize.y)))
@@ -92,8 +98,15 @@ final class BoidsRenderer: MetalView.Coordinator {
             particles.append(particle)
         }
         let size = particles.count * MemoryLayout<Particle>.size
-        particleBuffer = metalDevice.makeBuffer(bytes: &particles, length: size, options: [])
-
+        
+        for _ in 0 ..< BoidsRenderer.maxInflightBuffers {
+            
+            guard let buffer = metalDevice.makeBuffer(bytes: &particles, length: size, options: []) else {
+                fatalError("can't initialize particle buffer")
+            }
+            
+            particleBuffer.append(buffer)
+        }
     }
     
     private func randomPosition(length: UInt) -> Float {
@@ -153,7 +166,7 @@ final class BoidsRenderer: MetalView.Coordinator {
         
         particles = []
         for i in 0..<particleCount {
-            particles.append((particleBuffer.contents() + (i * MemoryLayout<Particle>.size)).load(as: Particle.self))
+            particles.append((particleBuffer[currentFrameIndex].contents() + (i * MemoryLayout<Particle>.size)).load(as: Particle.self))
         }
     }
     
@@ -179,6 +192,9 @@ final class BoidsRenderer: MetalView.Coordinator {
         let textureThreadgroupsPerGrid = MTLSize(width: (Int(viewPortSize.x) + w - 1) / w, height: (Int(viewPortSize.y) + h - 1) / h, depth: 1)
                 
         initializeBoidsIfNeeded()
+        
+        frameBoundarySemaphore.wait()
+        currentFrameIndex = (currentFrameIndex + 1) % BoidsRenderer.maxInflightBuffers
 
         if let commandBuffer = metalCommandQueue.makeCommandBuffer(),
            let commandEncoder = commandBuffer.makeComputeCommandEncoder() {
@@ -188,7 +204,7 @@ final class BoidsRenderer: MetalView.Coordinator {
             if let particleBuffer = particleBuffer {
                 
                 commandEncoder.setComputePipelineState(secondState)
-                commandEncoder.setBuffer(particleBuffer, offset: 0, index: Int(SecondPassInputIndexParticle.rawValue))
+                commandEncoder.setBuffer(particleBuffer[currentFrameIndex], offset: 0, index: Int(SecondPassInputIndexParticle.rawValue))
                 commandEncoder.setBytes(&particleCount, length: MemoryLayout<Int>.stride, index: Int(SecondPassInputIndexParticleCount.rawValue))
                 commandEncoder.setBytes(&maxSpeed, length: MemoryLayout<Float>.stride, index: Int(SecondPassInputIndexMaxSpeed.rawValue))
                 commandEncoder.setBytes(&margin, length: MemoryLayout<Int>.stride, index: Int(SecondPassInputIndexMargin.rawValue))
@@ -219,7 +235,7 @@ final class BoidsRenderer: MetalView.Coordinator {
                if let particleBuffer = particleBuffer {
                    commandEncoder.setComputePipelineState(thirdState)
                    commandEncoder.setTexture(drawable.texture, index: 0)
-                   commandEncoder.setBuffer(particleBuffer, offset: 0, index: Int(ThirdPassInputTextureIndexParticle.rawValue))
+                   commandEncoder.setBuffer(particleBuffer[currentFrameIndex], offset: 0, index: Int(ThirdPassInputTextureIndexParticle.rawValue))
                    commandEncoder.setBytes(&drawRadius, length: MemoryLayout<Int>.stride, index: Int(ThirdPassInputTextureIndexRadius.rawValue))
                    commandEncoder.dispatchThreadgroups(particleThreadGroupsPerGrid, threadsPerThreadgroup: particleThreadsPerGroup)
                }
@@ -228,14 +244,18 @@ final class BoidsRenderer: MetalView.Coordinator {
                
                commandEncoder.endEncoding()
                commandBuffer.present(drawable)
+               commandBuffer.addCompletedHandler { [weak self] buffer in
+                   self?.frameBoundarySemaphore.signal()
+               }
                
            } else {
                fatalError("No drawable")
            }
                 
+            extractParticles()
+
             commandBuffer.commit()
         }
-        extractParticles()
     }
     
     //MARK: - Touches

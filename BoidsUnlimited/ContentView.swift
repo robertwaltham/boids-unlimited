@@ -20,7 +20,7 @@ struct ContentView: View {
         
     @State var started: Bool
     
-    var boid_counts = [128, 256, 512, 1024, 2048, 8192, 16384]
+    var boid_counts = [128, 256, 512, 1024, 2048, 8192, 16384, 32768, 65536]
     
     var body: some View {
 
